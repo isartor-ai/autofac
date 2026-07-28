@@ -56,4 +56,11 @@ public sealed class WaitingExternalCorrelationRepository : IWaitingExternalCorre
 
         return match?.RunId;
     }
+
+    public async Task<IReadOnlyList<WaitingExternalCorrelation>> ListWaitingAsync(CancellationToken cancellationToken)
+    {
+        return await _dbContext.WaitingExternalCorrelations
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+    }
 }

@@ -104,6 +104,10 @@ public static class DependencyInjection
         services.AddHostedService<RunDispatchWorker>();
         services.AddHostedService<InteractionTimeoutSweeper>();
 
+        services.Configure<WaitingExternalMonitorOptions>(
+            configuration.GetSection(WaitingExternalMonitorOptions.Section));
+        services.AddHostedService<WaitingExternalMonitor>();
+
         // Default no-op notifier; AddAgentwerkeIntegrations overrides it with the
         // connector-backed implementation when chat channels are configured (#31).
         services.TryAddScoped<Application.Notifications.IApprovalNotifier, Application.Notifications.NullApprovalNotifier>();

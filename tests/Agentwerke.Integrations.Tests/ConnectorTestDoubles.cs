@@ -56,6 +56,7 @@ internal sealed class NoOpWorkflowMetrics : IWorkflowMetrics
     public void RunStarted(string workflowId, string workflowName) { }
     public void StepCompleted(string stepType, string agentName, double durationMs, bool succeeded) { }
     public void ToolPolicyDenied(string agentName, string policyTag, string kind) { }
+    public void RecordWaitingExternalRuns(int total, int stale, double oldestAgeSeconds) { }
     public void InteractionTransition(string toStatus, string channel, bool won) { }
     public void WebhookReceived(string source, bool triggered) { }
 }

@@ -768,6 +768,14 @@ public static class SdlcTemplateSeeds
                   <bpmn:messageEventDefinition />
                 </bpmn:intermediateCatchEvent>
 
+                <bpmn:boundaryEvent id="UnitTestResultsTimeout" name="Unit Tests Timed Out"
+                                    attachedToRef="WaitUnitTestResults" cancelActivity="true">
+                  <bpmn:outgoing>Flow_UnitTestResultsTimeout_EscalateVerificationTimeout</bpmn:outgoing>
+                  <bpmn:timerEventDefinition>
+                    <bpmn:timeDuration>PT2H</bpmn:timeDuration>
+                  </bpmn:timerEventDefinition>
+                </bpmn:boundaryEvent>
+
                 <bpmn:serviceTask id="ValidateComponentTraceability" name="Component Traceability Gate">
                   <bpmn:extensionElements>
                     <agentwerke:agentTask
@@ -832,6 +840,14 @@ public static class SdlcTemplateSeeds
                   <bpmn:messageEventDefinition />
                 </bpmn:intermediateCatchEvent>
 
+                <bpmn:boundaryEvent id="IntegrationTestResultsTimeout" name="Integration Tests Timed Out"
+                                    attachedToRef="WaitIntegrationTestResults" cancelActivity="true">
+                  <bpmn:outgoing>Flow_IntegrationTestResultsTimeout_EscalateVerificationTimeout</bpmn:outgoing>
+                  <bpmn:timerEventDefinition>
+                    <bpmn:timeDuration>PT4H</bpmn:timeDuration>
+                  </bpmn:timerEventDefinition>
+                </bpmn:boundaryEvent>
+
                 <bpmn:serviceTask id="ValidateArchitectureTraceability" name="Architecture Traceability Gate">
                   <bpmn:extensionElements>
                     <agentwerke:agentTask
@@ -894,6 +910,14 @@ public static class SdlcTemplateSeeds
                   <bpmn:outgoing>Flow_WaitSystemTestResults_SummarizeVerificationFailures</bpmn:outgoing>
                   <bpmn:messageEventDefinition />
                 </bpmn:intermediateCatchEvent>
+
+                <bpmn:boundaryEvent id="SystemTestResultsTimeout" name="System Tests Timed Out"
+                                    attachedToRef="WaitSystemTestResults" cancelActivity="true">
+                  <bpmn:outgoing>Flow_SystemTestResultsTimeout_EscalateVerificationTimeout</bpmn:outgoing>
+                  <bpmn:timerEventDefinition>
+                    <bpmn:timeDuration>PT8H</bpmn:timeDuration>
+                  </bpmn:timerEventDefinition>
+                </bpmn:boundaryEvent>
 
                 <bpmn:serviceTask id="SummarizeVerificationFailures" name="Summarize Verification Failures">
                   <bpmn:extensionElements>
@@ -995,6 +1019,40 @@ public static class SdlcTemplateSeeds
                   <bpmn:incoming>Flow_PrepareTraceabilityReport_End</bpmn:incoming>
                 </bpmn:endEvent>
 
+                <bpmn:serviceTask id="EscalateVerificationTimeout" name="Escalate Verification Timeout">
+                  <bpmn:extensionElements>
+                    <agentwerke:agentTask
+                      agent="analyst"
+                      action="vmodel.verification.escalate_timeout"
+                      environment="github"
+                      purposeType="verification_escalation"
+                      policyTag="vmodel-verification-timeout"
+                      executionMode="local"
+                      permissionLevel="read-only"
+                      allowedTools="artifact.read,github.comment_issue"
+                      requiresEvidence="requirements_baseline">
+                      <agentwerke:metadata key="phase" value="verification_timeout" />
+                      <agentwerke:prompt><![CDATA[
+            A verification stage never reported results and its boundary timer expired.
+
+            Timed-out wait:
+            {{event.payload}}
+
+            Report which verification stage stalled, what evidence is missing, and who should be
+            asked to re-run or cancel the build.
+                      ]]></agentwerke:prompt>
+                    </agentwerke:agentTask>
+                  </bpmn:extensionElements>
+                  <bpmn:incoming>Flow_UnitTestResultsTimeout_EscalateVerificationTimeout</bpmn:incoming>
+                  <bpmn:incoming>Flow_IntegrationTestResultsTimeout_EscalateVerificationTimeout</bpmn:incoming>
+                  <bpmn:incoming>Flow_SystemTestResultsTimeout_EscalateVerificationTimeout</bpmn:incoming>
+                  <bpmn:outgoing>Flow_EscalateVerificationTimeout_EndTimedOut</bpmn:outgoing>
+                </bpmn:serviceTask>
+
+                <bpmn:endEvent id="EndTimedOut" name="Verification Timed Out">
+                  <bpmn:incoming>Flow_EscalateVerificationTimeout_EndTimedOut</bpmn:incoming>
+                </bpmn:endEvent>
+
                 <bpmn:sequenceFlow id="Flow_Start_DraftRequirements" sourceRef="Start" targetRef="DraftRequirements" />
                 <bpmn:sequenceFlow id="Flow_DraftRequirements_ApproveRequirementsBaseline" sourceRef="DraftRequirements" targetRef="ApproveRequirementsBaseline" />
                 <bpmn:sequenceFlow id="Flow_ApproveRequirementsBaseline_DraftSystemArchitecture" sourceRef="ApproveRequirementsBaseline" targetRef="DraftSystemArchitecture" />
@@ -1013,6 +1071,11 @@ public static class SdlcTemplateSeeds
                 <bpmn:sequenceFlow id="Flow_PrepareAcceptanceTest_ApproveAcceptanceSignoff" sourceRef="PrepareAcceptanceTest" targetRef="ApproveAcceptanceSignoff" />
                 <bpmn:sequenceFlow id="Flow_ApproveAcceptanceSignoff_PrepareTraceabilityReport" sourceRef="ApproveAcceptanceSignoff" targetRef="PrepareTraceabilityReport" />
                 <bpmn:sequenceFlow id="Flow_PrepareTraceabilityReport_End" sourceRef="PrepareTraceabilityReport" targetRef="End" />
+
+                <bpmn:sequenceFlow id="Flow_UnitTestResultsTimeout_EscalateVerificationTimeout" sourceRef="UnitTestResultsTimeout" targetRef="EscalateVerificationTimeout" />
+                <bpmn:sequenceFlow id="Flow_IntegrationTestResultsTimeout_EscalateVerificationTimeout" sourceRef="IntegrationTestResultsTimeout" targetRef="EscalateVerificationTimeout" />
+                <bpmn:sequenceFlow id="Flow_SystemTestResultsTimeout_EscalateVerificationTimeout" sourceRef="SystemTestResultsTimeout" targetRef="EscalateVerificationTimeout" />
+                <bpmn:sequenceFlow id="Flow_EscalateVerificationTimeout_EndTimedOut" sourceRef="EscalateVerificationTimeout" targetRef="EndTimedOut" />
               </bpmn:process>
             </bpmn:definitions>
             """,

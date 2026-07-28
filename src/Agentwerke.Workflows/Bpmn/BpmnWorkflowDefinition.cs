@@ -51,7 +51,18 @@ public sealed record BpmnNodeDefinition(
     AgentwerkeTaskMetadata? Metadata,
     AgentwerkeApprovalMetadata? ApprovalMetadata = null,
     string? TimerDuration = null,
-    AgentwerkeExternalEventMetadata? ExternalEventMetadata = null);
+    AgentwerkeExternalEventMetadata? ExternalEventMetadata = null,
+    /// <summary>
+    /// For boundaryEvent nodes: the id of the activity this event is attached to
+    /// (BPMN <c>attachedToRef</c>). Null for the legacy convention where a boundary event
+    /// is modelled as the sequence-flow successor of the activity it guards.
+    /// </summary>
+    string? AttachedToRef = null,
+    /// <summary>
+    /// For boundaryEvent nodes: whether firing interrupts the activity it is attached to
+    /// (BPMN <c>cancelActivity</c>, default true).
+    /// </summary>
+    bool CancelActivity = true);
 
 public sealed record AgentwerkeTaskMetadata(
     string Agent,

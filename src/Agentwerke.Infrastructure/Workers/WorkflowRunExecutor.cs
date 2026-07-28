@@ -170,6 +170,11 @@ public sealed class WorkflowRunExecutor : IWorkflowRunExecutor
                 break;
 
             case "waiting_external":
+                // An external wait guarded by an interrupting boundary timer schedules the same
+                // Timer outbox entry a timer event does; when it fires, recovery follows the
+                // boundary flow instead of leaving the run parked forever (#208).
+                if (result.TimerDueAt.HasValue)
+                    await _outbox.EnqueueAsync(OutboxOperations.Timer, runId, visibleAfter: result.TimerDueAt, ct: ct);
                 await _runRepository.UpdateRunStatusAsync(runId, "waiting_external", ct);
                 break;
 

@@ -138,6 +138,8 @@ public sealed class BpmnWorkflowValidator : IBpmnWorkflowValidator
             AgentwerkeApprovalMetadata? approvalMetadata = null;
             string? timerDuration = null;
             AgentwerkeExternalEventMetadata? externalEventMetadata = null;
+            string? attachedToRef = null;
+            var cancelActivity = true;
 
             if ((localName is "serviceTask" or "scriptTask" or "userTask") &&
                 string.IsNullOrWhiteSpace(element.Attribute("name")?.Value))
@@ -177,6 +179,12 @@ public sealed class BpmnWorkflowValidator : IBpmnWorkflowValidator
                     break;
                 case "boundaryEvent":
                     ValidateBoundaryEvent(element, errors);
+                    attachedToRef = element.Attribute("attachedToRef")?.Value;
+                    cancelActivity = ParseCancelActivity(element, errors);
+                    if (HasChild(element, "timerEventDefinition"))
+                    {
+                        timerDuration = ParseBoundaryTimerDuration(element, errors);
+                    }
                     break;
             }
 
@@ -187,9 +195,12 @@ public sealed class BpmnWorkflowValidator : IBpmnWorkflowValidator
                 Metadata: metadata,
                 ApprovalMetadata: approvalMetadata,
                 TimerDuration: timerDuration,
-                ExternalEventMetadata: externalEventMetadata));
+                ExternalEventMetadata: externalEventMetadata,
+                AttachedToRef: string.IsNullOrWhiteSpace(attachedToRef) ? null : attachedToRef,
+                CancelActivity: cancelActivity));
         }
 
+        ValidateBoundaryAttachments(nodes, errors);
         ValidateSequenceFlows(nodes, sequenceFlows, errors);
         ValidateExclusiveGateways(nodes, sequenceFlows, errors, warnings);
 
@@ -607,6 +618,112 @@ public sealed class BpmnWorkflowValidator : IBpmnWorkflowValidator
         var timeDuration = timerDef.Elements().FirstOrDefault(static c => c.Name.LocalName == "timeDuration");
         return timeDuration?.Value?.Trim();
     }
+
+    private static bool ParseCancelActivity(XElement element, ICollection<BpmnValidationError> errors)
+    {
+        var value = element.Attribute("cancelActivity")?.Value;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true; // BPMN default: boundary events interrupt.
+        }
+
+        if (!bool.TryParse(value, out var parsed))
+        {
+            errors.Add(CreateError(element, "Boundary event attribute 'cancelActivity' must be 'true' or 'false'."));
+            return true;
+        }
+
+        return parsed;
+    }
+
+    private static string? ParseBoundaryTimerDuration(XElement element, ICollection<BpmnValidationError> errors)
+    {
+        var timerDef = element.Elements().First(static c => c.Name.LocalName == "timerEventDefinition");
+        var timeDuration = timerDef.Elements()
+            .FirstOrDefault(static c => c.Name.LocalName == "timeDuration")?.Value?.Trim();
+
+        if (string.IsNullOrWhiteSpace(timeDuration))
+        {
+            errors.Add(CreateError(element,
+                "Boundary timer event must define a bpmn:timeDuration (ISO-8601, e.g. PT4H)."));
+            return null;
+        }
+
+        TimeSpan parsed;
+        try
+        {
+            parsed = XmlConvert.ToTimeSpan(timeDuration);
+        }
+        catch (FormatException)
+        {
+            errors.Add(CreateError(element,
+                $"Boundary timer duration '{timeDuration}' is not a valid ISO-8601 duration (e.g. PT4H)."));
+            return null;
+        }
+
+        if (parsed <= TimeSpan.Zero)
+        {
+            errors.Add(CreateError(element,
+                $"Boundary timer duration '{timeDuration}' must be greater than zero."));
+            return null;
+        }
+
+        return timeDuration;
+    }
+
+    /// <summary>
+    /// Checks boundary events that use BPMN <c>attachedToRef</c>. Timer boundaries on external
+    /// waits (receiveTask / message intermediateCatchEvent) are what stop a run parking in
+    /// <c>waiting_external</c> forever (#208), so their configuration is validated up front
+    /// rather than silently ignored at runtime.
+    /// </summary>
+    private static void ValidateBoundaryAttachments(
+        IReadOnlyList<BpmnNodeDefinition> nodes,
+        ICollection<BpmnValidationError> errors)
+    {
+        var nodeById = new Dictionary<string, BpmnNodeDefinition>(StringComparer.Ordinal);
+        foreach (var node in nodes)
+        {
+            nodeById[node.Id] = node;
+        }
+
+        foreach (var boundary in nodes.Where(static n => n.ElementName == "boundaryEvent" && n.AttachedToRef is not null))
+        {
+            if (!nodeById.TryGetValue(boundary.AttachedToRef!, out var host))
+            {
+                errors.Add(new BpmnValidationError(
+                    $"Boundary event '{boundary.Id}' is attached to unknown activity '{boundary.AttachedToRef}'.",
+                    ElementId: boundary.Id, ElementName: "boundaryEvent",
+                    LineNumber: null, LinePosition: null));
+                continue;
+            }
+
+            if (!IsExternalWaitNode(host))
+            {
+                continue;
+            }
+
+            if (boundary.TimerDuration is null)
+            {
+                errors.Add(new BpmnValidationError(
+                    $"Boundary event '{boundary.Id}' on external wait '{host.Id}' must define a bpmn:timerEventDefinition with a timeDuration.",
+                    ElementId: boundary.Id, ElementName: "boundaryEvent",
+                    LineNumber: null, LinePosition: null));
+            }
+
+            if (!boundary.CancelActivity)
+            {
+                errors.Add(new BpmnValidationError(
+                    $"Boundary event '{boundary.Id}' on external wait '{host.Id}' must be interrupting (cancelActivity='true'); a non-interrupting timer would leave the run waiting.",
+                    ElementId: boundary.Id, ElementName: "boundaryEvent",
+                    LineNumber: null, LinePosition: null));
+            }
+        }
+    }
+
+    private static bool IsExternalWaitNode(BpmnNodeDefinition node) =>
+        node.ExternalEventMetadata is not null &&
+        node.ElementName is "receiveTask" or "intermediateCatchEvent";
 
     private static void ValidateSequenceFlows(
         IReadOnlyList<BpmnNodeDefinition> nodes,

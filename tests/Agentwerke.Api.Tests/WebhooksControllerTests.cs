@@ -1324,6 +1324,9 @@ public sealed class WebhooksControllerTests
             var messageMatches = onlyMatchMessage is null || string.Equals(onlyMatchMessage, messageName, StringComparison.Ordinal);
             return Task.FromResult(keyMatches && messageMatches ? runId : null);
         }
+
+        public Task<IReadOnlyList<WaitingExternalCorrelation>> ListWaitingAsync(CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 
     private sealed class StubTriggerRouter(string? workflowId) : ITriggerRouter

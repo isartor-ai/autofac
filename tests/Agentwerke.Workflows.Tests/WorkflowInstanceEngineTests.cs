@@ -267,6 +267,138 @@ public sealed class WorkflowInstanceEngineTests
     }
 
     [Fact]
+    public async Task StartAsync_WhenExternalWaitHasBoundaryTimer_ArmsDeadline()
+    {
+        var store = new InMemoryWorkflowRuntimeStore();
+        var runContext = new InMemoryRunContextRepository();
+        var engine = new WorkflowInstanceEngine(store, new NoOpServiceTaskExecutor(), runContext, NullLogger<WorkflowInstanceEngine>.Instance);
+        var run = await store.CreateRunAsync("ExternalFlow", "system", CancellationToken.None);
+        await runContext.SetAsync(run.Id, "branch_name", "feature/external-wait", RunContextKinds.Input, CancellationToken.None);
+
+        var before = DateTimeOffset.UtcNow;
+        var state = await engine.StartAsync(
+            new WorkflowEngineStartRequest("ExternalFlow", CreateBoundedExternalWaitDefinition("PT1H"), "system", ExistingRunId: run.Id),
+            CancellationToken.None);
+
+        Assert.Equal("waiting_external", state.Status);
+        Assert.NotNull(state.TimerDueAt);
+        Assert.True(state.TimerDueAt >= before.AddMinutes(59));
+
+        var events = await store.ListRunEventsAsync(run.Id, CancellationToken.None);
+        Assert.Contains(events, static e => e.Type == "timer_scheduled");
+    }
+
+    [Fact]
+    public async Task ResumeAsync_WhenExternalEventArrivesBeforeBoundaryTimer_CompletesWithoutTimingOut()
+    {
+        var store = new InMemoryWorkflowRuntimeStore();
+        var runContext = new InMemoryRunContextRepository();
+        var definition = CreateBoundedExternalWaitDefinition("PT1H");
+        var engine = new WorkflowInstanceEngine(store, new NoOpServiceTaskExecutor(), runContext, NullLogger<WorkflowInstanceEngine>.Instance);
+        var run = await store.CreateRunAsync("ExternalFlow", "system", CancellationToken.None);
+        await runContext.SetAsync(run.Id, "branch_name", "feature/external-wait", RunContextKinds.Input, CancellationToken.None);
+
+        await engine.StartAsync(
+            new WorkflowEngineStartRequest("ExternalFlow", definition, "system", ExistingRunId: run.Id),
+            CancellationToken.None);
+
+        var resumed = await engine.ResumeAsync(
+            new WorkflowEngineResumeRequest(
+                run.Id,
+                definition,
+                ApprovedBy: null,
+                ExternalCorrelationKey: "feature/external-wait",
+                ExternalPayload: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["status"] = "passed" },
+                ResumedBy: "ci"),
+            CancellationToken.None);
+
+        Assert.Equal("completed", resumed.Status);
+
+        var events = await store.ListRunEventsAsync(run.Id, CancellationToken.None);
+        Assert.DoesNotContain(events, static e => e.Type == "wait_timed_out");
+        Assert.Contains(events, static e => e.Type == "external_event_received");
+        // The happy path continues past the wait, not down the boundary's escalation flow.
+        Assert.DoesNotContain(events, static e => e.Message.Contains("\"nodeId\":\"Escalate\"", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task RecoverAsync_WhenBoundaryTimerExpired_FollowsBoundaryFlowInsteadOfParking()
+    {
+        var store = new InMemoryWorkflowRuntimeStore();
+        var runContext = new InMemoryRunContextRepository();
+        // A zero duration makes the wait's deadline "now", so recovery sees it as expired —
+        // the same path a real PT4H timer takes once its outbox entry fires.
+        var definition = CreateBoundedExternalWaitDefinition("PT0S");
+        var engine = new WorkflowInstanceEngine(store, new NoOpServiceTaskExecutor(), runContext, NullLogger<WorkflowInstanceEngine>.Instance);
+        var run = await store.CreateRunAsync("ExternalFlow", "system", CancellationToken.None);
+        await runContext.SetAsync(run.Id, "branch_name", "feature/external-wait", RunContextKinds.Input, CancellationToken.None);
+
+        var started = await engine.StartAsync(
+            new WorkflowEngineStartRequest("ExternalFlow", definition, "system", ExistingRunId: run.Id),
+            CancellationToken.None);
+        Assert.Equal("waiting_external", started.Status);
+
+        var recovered = await engine.RecoverAsync(
+            new WorkflowEngineRecoverRequest(run.Id, definition),
+            CancellationToken.None);
+
+        Assert.Equal("completed", recovered.Status);
+
+        var events = await store.ListRunEventsAsync(run.Id, CancellationToken.None);
+        var timedOut = Assert.Single(events, static e => e.Type == "wait_timed_out");
+        Assert.Contains("WaitForMerge", timedOut.Message, StringComparison.Ordinal);
+        Assert.Contains("MergeTimeout", timedOut.Message, StringComparison.Ordinal);
+        Assert.Contains(events, static e => e.Type == "boundary_event_triggered");
+        // The escalation branch ran; the wait's own successor did not.
+        Assert.Contains(events, static e => e.Type == "node_entered" && e.Message.Contains("\"nodeId\":\"Escalate\"", StringComparison.Ordinal));
+        Assert.DoesNotContain(events, static e => e.Type == "node_entered" && e.Message.Contains("\"nodeId\":\"Deploy\"", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task RecoverAsync_WhenBoundaryTimerHasNotExpired_StaysParkedAndKeepsDeadline()
+    {
+        var store = new InMemoryWorkflowRuntimeStore();
+        var runContext = new InMemoryRunContextRepository();
+        var definition = CreateBoundedExternalWaitDefinition("PT1H");
+        var engine = new WorkflowInstanceEngine(store, new NoOpServiceTaskExecutor(), runContext, NullLogger<WorkflowInstanceEngine>.Instance);
+        var run = await store.CreateRunAsync("ExternalFlow", "system", CancellationToken.None);
+        await runContext.SetAsync(run.Id, "branch_name", "feature/external-wait", RunContextKinds.Input, CancellationToken.None);
+
+        await engine.StartAsync(
+            new WorkflowEngineStartRequest("ExternalFlow", definition, "system", ExistingRunId: run.Id),
+            CancellationToken.None);
+
+        var recovered = await engine.RecoverAsync(
+            new WorkflowEngineRecoverRequest(run.Id, definition),
+            CancellationToken.None);
+
+        Assert.Equal("waiting_external", recovered.Status);
+        Assert.Equal("WaitForMerge", recovered.WaitingOnNodeId);
+        Assert.NotNull(recovered.TimerDueAt);
+        Assert.True(recovered.TimerDueAt > DateTimeOffset.UtcNow);
+
+        var events = await store.ListRunEventsAsync(run.Id, CancellationToken.None);
+        Assert.DoesNotContain(events, static e => e.Type == "wait_timed_out");
+    }
+
+    [Fact]
+    public async Task StartAsync_WhenExternalWaitHasNoBoundaryTimer_ParksWithoutDeadline()
+    {
+        var store = new InMemoryWorkflowRuntimeStore();
+        var runContext = new InMemoryRunContextRepository();
+        var engine = new WorkflowInstanceEngine(store, new NoOpServiceTaskExecutor(), runContext, NullLogger<WorkflowInstanceEngine>.Instance);
+        var run = await store.CreateRunAsync("ExternalFlow", "system", CancellationToken.None);
+        await runContext.SetAsync(run.Id, "branch_name", "feature/external-wait", RunContextKinds.Input, CancellationToken.None);
+
+        var state = await engine.StartAsync(
+            new WorkflowEngineStartRequest("ExternalFlow", CreateExternalWaitDefinition(), "system", ExistingRunId: run.Id),
+            CancellationToken.None);
+
+        Assert.Equal("waiting_external", state.Status);
+        Assert.Null(state.TimerDueAt);
+    }
+
+    [Fact]
     public async Task StartAsync_WhenExistingRunIdIsProvided_ReusesPreCreatedRun()
     {
         var store = new InMemoryWorkflowRuntimeStore();
@@ -582,6 +714,56 @@ public sealed class WorkflowInstanceEngineTests
                     new AgentwerkeApprovalMetadata("manual_review", "human_approval_required")),
                 new BpmnNodeDefinition("Finalize", "Finalize", "serviceTask", new AgentwerkeTaskMetadata("agent", "action", null, "purpose", "policy", [])),
                 new BpmnNodeDefinition("End", "End", "endEvent", null)
+            ]);
+    }
+
+    /// <summary>
+    /// External wait guarded by an interrupting boundary timer (#208): the happy path continues
+    /// to Deploy, the boundary's flow escalates instead of leaving the run parked forever.
+    /// </summary>
+    private static BpmnWorkflowDefinition CreateBoundedExternalWaitDefinition(string timerDuration)
+    {
+        return new BpmnWorkflowDefinition(
+            ProcessId: "ExternalFlow",
+            ProcessName: "Bounded External Wait Workflow",
+            Nodes:
+            [
+                new BpmnNodeDefinition("Start", "Start", "startEvent", null),
+                new BpmnNodeDefinition(
+                    "WaitForMerge",
+                    "Wait for Merge",
+                    "intermediateCatchEvent",
+                    null,
+                    ExternalEventMetadata: new AgentwerkeExternalEventMetadata(
+                        "github.pull_request.merged",
+                        "{{run_context.branch_name}}")),
+                new BpmnNodeDefinition(
+                    "MergeTimeout",
+                    "Merge Timed Out",
+                    "boundaryEvent",
+                    null,
+                    TimerDuration: timerDuration,
+                    AttachedToRef: "WaitForMerge"),
+                new BpmnNodeDefinition(
+                    "Deploy",
+                    "Deploy",
+                    "serviceTask",
+                    new AgentwerkeTaskMetadata("agent", "deploy", null, "purpose", "policy", [])),
+                new BpmnNodeDefinition(
+                    "Escalate",
+                    "Escalate",
+                    "serviceTask",
+                    new AgentwerkeTaskMetadata("agent", "escalate", null, "purpose", "policy", [])),
+                new BpmnNodeDefinition("End", "End", "endEvent", null),
+                new BpmnNodeDefinition("EndTimedOut", "End Timed Out", "endEvent", null)
+            ],
+            SequenceFlows:
+            [
+                new BpmnSequenceFlow("f1", "Start", "WaitForMerge"),
+                new BpmnSequenceFlow("f2", "WaitForMerge", "Deploy"),
+                new BpmnSequenceFlow("f3", "Deploy", "End"),
+                new BpmnSequenceFlow("f4", "MergeTimeout", "Escalate"),
+                new BpmnSequenceFlow("f5", "Escalate", "EndTimedOut")
             ]);
     }
 

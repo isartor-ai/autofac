@@ -30,6 +30,12 @@ public sealed class WorkflowMetrics : IWorkflowMetrics, IDisposable
     private readonly Histogram<double> _modelCostUsd;
     private readonly Counter<long> _toolPolicyDenials;
 
+    // Last observation of the waiting_external population, published through observable gauges
+    // so every Prometheus scrape reports the most recent sweep (#208).
+    private int _waitingExternalRuns;
+    private int _waitingExternalRunsStale;
+    private double _waitingExternalOldestAgeSeconds;
+
     public WorkflowMetrics()
     {
         _meter = new Meter(MeterName, "1.0.0");
@@ -59,6 +65,20 @@ public sealed class WorkflowMetrics : IWorkflowMetrics, IDisposable
         _modelOutputTokens = _meter.CreateCounter<long>("agent.model.tokens.output", description: "Cumulative output tokens produced by language-model invocations.");
         _modelCostUsd = _meter.CreateHistogram<double>("agent.model.cost_usd", unit: "USD", description: "Estimated USD cost per language-model invocation.");
         _toolPolicyDenials = _meter.CreateCounter<long>("agent.tool.policy_denials", description: "Tool calls denied or escalated by policy enforcement.");
+
+        _meter.CreateObservableGauge(
+            "workflow.runs.waiting_external",
+            () => Volatile.Read(ref _waitingExternalRuns),
+            description: "Runs currently parked waiting on an external event.");
+        _meter.CreateObservableGauge(
+            "workflow.runs.waiting_external.stale",
+            () => Volatile.Read(ref _waitingExternalRunsStale),
+            description: "Runs parked waiting on an external event for longer than the configured threshold.");
+        _meter.CreateObservableGauge(
+            "workflow.runs.waiting_external.oldest_age_seconds",
+            () => Volatile.Read(ref _waitingExternalOldestAgeSeconds),
+            unit: "s",
+            description: "Age of the longest-parked run waiting on an external event.");
     }
 
     public void RunStarted(string workflowId, string workflowName)
@@ -174,6 +194,13 @@ public sealed class WorkflowMetrics : IWorkflowMetrics, IDisposable
             new KeyValuePair<string, object?>("agent.name", agentName),
             new KeyValuePair<string, object?>("policy.tag", policyTag),
             new KeyValuePair<string, object?>("denial.kind", kind));
+    }
+
+    public void RecordWaitingExternalRuns(int total, int stale, double oldestAgeSeconds)
+    {
+        Volatile.Write(ref _waitingExternalRuns, total);
+        Volatile.Write(ref _waitingExternalRunsStale, stale);
+        Volatile.Write(ref _waitingExternalOldestAgeSeconds, oldestAgeSeconds);
     }
 
     public void Dispose() => _meter.Dispose();

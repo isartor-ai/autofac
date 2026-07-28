@@ -419,4 +419,5 @@ internal sealed class NoOpWorkflowMetrics : IWorkflowMetrics
     public void ConnectorInvoked(string connectorId, string operation, double durationMs, bool succeeded) { }
     public void ModelInvoked(string agentName, string modelId, int inputTokens, int outputTokens, double latencyMs, double costUsd, bool succeeded) { }
     public void ToolPolicyDenied(string agentName, string policyTag, string kind) { }
+    public void RecordWaitingExternalRuns(int total, int stale, double oldestAgeSeconds) { }
 }

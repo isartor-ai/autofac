@@ -215,12 +215,25 @@ public sealed class WorkflowInstanceEngine : IWorkflowEngineAdapter
 
         if (string.Equals(checkpoint.Status, WaitingExternalStatus, StringComparison.Ordinal))
         {
+            var deadline = ParseTimestamp(checkpoint.ExternalTimeoutAt);
+
+            // The wait's boundary timer has expired: the external system never delivered
+            // (CI never ran, webhook misconfigured, build cancelled). Follow the boundary
+            // flow instead of parking forever (#208).
+            if (deadline is not null && checkpoint.BoundaryNodeId is not null && deadline <= DateTimeOffset.UtcNow)
+            {
+                return await TriggerExternalWaitTimeoutAsync(request.RunId, request.Definition, checkpoint, deadline.Value, cancellationToken);
+            }
+
             return new WorkflowExecutionState(
                 RunId: request.RunId,
                 Status: WaitingExternalStatus,
                 NextNodeId: checkpoint.NextNodeId,
                 WaitingOnNodeId: checkpoint.WaitingOnNodeId,
                 CompletedAt: null,
+                // Re-arm the boundary timer so a recovery pass before the deadline does not
+                // drop it. Always in the future here, so this cannot spin.
+                TimerDueAt: deadline,
                 WaitingExternalCorrelationKey: checkpoint.ExternalCorrelationKey,
                 WaitingExternalMessageName: checkpoint.ExternalMessageName);
         }
@@ -400,6 +413,7 @@ public sealed class WorkflowInstanceEngine : IWorkflowEngineAdapter
                     {
                         return await WaitForExternalEventAsync(
                             runId,
+                            graph,
                             node,
                             graph.GetSingleSuccessor(node.Id),
                             cancellationToken);
@@ -414,6 +428,7 @@ public sealed class WorkflowInstanceEngine : IWorkflowEngineAdapter
                 case "receiveTask":
                     return await WaitForExternalEventAsync(
                         runId,
+                        graph,
                         node,
                         graph.GetSingleSuccessor(node.Id),
                         cancellationToken);
@@ -554,7 +569,8 @@ public sealed class WorkflowInstanceEngine : IWorkflowEngineAdapter
         var simulateTimeout = metadata?.SimulateTimeout ?? false;
         var timeoutSeconds = metadata?.TimeoutSeconds;
 
-        // Find boundary event (adjacent node in flow that is a boundaryEvent)
+        // Find boundary event: either the adjacent node in flow that is a boundaryEvent
+        // (legacy convention) or one attached via BPMN attachedToRef.
         var successorId = graph.GetSingleSuccessorOrNull(node.Id);
         BpmnNodeDefinition? boundaryNode = null;
         if (successorId is not null
@@ -563,6 +579,7 @@ public sealed class WorkflowInstanceEngine : IWorkflowEngineAdapter
         {
             boundaryNode = candidate;
         }
+        boundaryNode ??= graph.GetAttachedTimerBoundary(node.Id);
 
         var step = await store.CreateStepAsync(
             runId, node.Id, node.Name, node.ElementName, metadata?.Agent, cancellationToken);
@@ -817,6 +834,7 @@ public sealed class WorkflowInstanceEngine : IWorkflowEngineAdapter
 
     private async Task<WorkflowExecutionState> WaitForExternalEventAsync(
         string runId,
+        FlowGraph graph,
         BpmnNodeDefinition node,
         string? nextNodeId,
         CancellationToken cancellationToken)
@@ -826,15 +844,38 @@ public sealed class WorkflowInstanceEngine : IWorkflowEngineAdapter
 
         var correlationKey = await RenderCorrelationKeyAsync(runId, externalEvent.CorrelationKeyTemplate, cancellationToken);
 
+        // An interrupting boundary timer on the wait bounds how long the run may park here.
+        // Without one the run waits indefinitely, which is the pre-#208 behaviour.
+        var boundaryNode = graph.GetAttachedTimerBoundary(node.Id);
+        DateTimeOffset? timeoutAt = boundaryNode is null
+            ? null
+            : DateTimeOffset.UtcNow.Add(ParseDuration(boundaryNode.TimerDuration));
+
         await _store.AppendEventAsync(runId, "external_event_waiting",
             Serialize(new
             {
                 runId,
                 nodeId = node.Id,
                 messageName = externalEvent.MessageName,
-                correlationKey
+                correlationKey,
+                timeoutAt = timeoutAt?.ToString("o"),
+                boundaryNodeId = boundaryNode?.Id
             }),
             cancellationToken);
+
+        if (boundaryNode is not null)
+        {
+            await _store.AppendEventAsync(runId, "timer_scheduled",
+                Serialize(new
+                {
+                    runId,
+                    nodeId = boundaryNode.Id,
+                    attachedToNodeId = node.Id,
+                    dueAt = timeoutAt!.Value.ToString("o"),
+                    duration = boundaryNode.TimerDuration
+                }),
+                cancellationToken);
+        }
 
         await _store.UpdateRunStatusAsync(runId, WaitingExternalStatus, completedAt: null, cancellationToken);
         await SaveCheckpointAsync(
@@ -845,7 +886,9 @@ public sealed class WorkflowInstanceEngine : IWorkflowEngineAdapter
             completedAt: null,
             cancellationToken,
             externalCorrelationKey: correlationKey,
-            externalMessageName: externalEvent.MessageName);
+            externalMessageName: externalEvent.MessageName,
+            externalTimeoutAt: timeoutAt?.ToString("o"),
+            boundaryNodeId: boundaryNode?.Id);
 
         return new WorkflowExecutionState(
             RunId: runId,
@@ -853,8 +896,65 @@ public sealed class WorkflowInstanceEngine : IWorkflowEngineAdapter
             NextNodeId: nextNodeId,
             WaitingOnNodeId: node.Id,
             CompletedAt: null,
+            TimerDueAt: timeoutAt,
             WaitingExternalCorrelationKey: correlationKey,
             WaitingExternalMessageName: externalEvent.MessageName);
+    }
+
+    /// <summary>
+    /// Fires the interrupting boundary timer on an external wait whose event never arrived:
+    /// records the timeout on the run's event log and continues down the boundary's outgoing
+    /// flow (escalate / notify / fail) instead of leaving the run parked (#208).
+    /// </summary>
+    private async Task<WorkflowExecutionState> TriggerExternalWaitTimeoutAsync(
+        string runId,
+        BpmnWorkflowDefinition definition,
+        CheckpointPayload checkpoint,
+        DateTimeOffset deadline,
+        CancellationToken cancellationToken)
+    {
+        var graph = FlowGraph.Build(definition);
+        var boundaryNodeId = checkpoint.BoundaryNodeId!;
+
+        _logger.LogWarning(
+            "External wait timed out. RunId={RunId} NodeId={NodeId} BoundaryNodeId={BoundaryNodeId} TimeoutAt={TimeoutAt}",
+            runId, checkpoint.WaitingOnNodeId, boundaryNodeId, deadline.ToString("o"));
+
+        await _store.AppendEventAsync(runId, "wait_timed_out",
+            Serialize(new
+            {
+                runId,
+                nodeId = checkpoint.WaitingOnNodeId,
+                boundaryNodeId,
+                messageName = checkpoint.ExternalMessageName,
+                correlationKey = checkpoint.ExternalCorrelationKey,
+                timeoutAt = deadline.ToString("o"),
+                firedAt = DateTimeOffset.UtcNow.ToString("o")
+            }),
+            cancellationToken);
+
+        await _store.AppendEventAsync(runId, "boundary_event_triggered",
+            Serialize(new { runId, boundaryNodeId, sourceNodeId = checkpoint.WaitingOnNodeId, reason = "external_wait_timeout" }),
+            cancellationToken);
+
+        if (checkpoint.WaitingOnNodeId is not null &&
+            graph.NodeById.TryGetValue(checkpoint.WaitingOnNodeId, out var waitNode))
+        {
+            await _store.AppendEventAsync(runId, "node_completed",
+                Serialize(new { runId, nodeId = waitNode.Id, nodeType = waitNode.ElementName, reason = "external_wait_timeout" }),
+                cancellationToken);
+        }
+
+        var escalationNodeId = graph.GetSingleSuccessorOrNull(boundaryNodeId);
+        if (escalationNodeId is null)
+        {
+            // A boundary with no outgoing flow can only mean "give up here".
+            await _store.UpdateRunStatusAsync(runId, FailedStatus, completedAt: null, cancellationToken);
+            await SaveCheckpointAsync(runId, FailedStatus, null, null, null, cancellationToken);
+            return new WorkflowExecutionState(runId, FailedStatus, null, null, null);
+        }
+
+        return await AdvanceAsync(runId, definition, escalationNodeId, cancellationToken);
     }
 
     private Task ExecuteParallelTimerAsync(
@@ -902,10 +1002,14 @@ public sealed class WorkflowInstanceEngine : IWorkflowEngineAdapter
         string? completedAt,
         CancellationToken cancellationToken,
         string? externalCorrelationKey = null,
-        string? externalMessageName = null)
+        string? externalMessageName = null,
+        string? externalTimeoutAt = null,
+        string? boundaryNodeId = null)
     {
         await _store.AppendEventAsync(runId, "checkpoint_saved",
-            Serialize(new CheckpointPayload(status, nextNodeId, waitingOnNodeId, completedAt, externalCorrelationKey, externalMessageName)),
+            Serialize(new CheckpointPayload(
+                status, nextNodeId, waitingOnNodeId, completedAt,
+                externalCorrelationKey, externalMessageName, externalTimeoutAt, boundaryNodeId)),
             cancellationToken);
     }
 
@@ -1039,6 +1143,15 @@ public sealed class WorkflowInstanceEngine : IWorkflowEngineAdapter
         }
     }
 
+    private static DateTimeOffset? ParseTimestamp(string? value) =>
+        DateTimeOffset.TryParse(
+            value,
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.RoundtripKind,
+            out var parsed)
+            ? parsed
+            : null;
+
     private static string Serialize<T>(T value) => JsonSerializer.Serialize(value, SerializerOptions);
 
     private sealed record CheckpointPayload(
@@ -1047,7 +1160,11 @@ public sealed class WorkflowInstanceEngine : IWorkflowEngineAdapter
         string? WaitingOnNodeId,
         string? CompletedAt,
         string? ExternalCorrelationKey,
-        string? ExternalMessageName);
+        string? ExternalMessageName,
+        /// <summary>When an external wait's interrupting boundary timer expires (#208). Null when the wait has no boundary timer.</summary>
+        string? ExternalTimeoutAt = null,
+        /// <summary>Id of the boundary event whose flow the run follows once <see cref="ExternalTimeoutAt"/> passes.</summary>
+        string? BoundaryNodeId = null);
 
     private enum ServiceExecutionResult { Completed, Failed, WaitingUser }
 
@@ -1063,14 +1180,24 @@ public sealed class WorkflowInstanceEngine : IWorkflowEngineAdapter
     {
         public IReadOnlyDictionary<string, BpmnNodeDefinition> NodeById { get; }
         private readonly IReadOnlyDictionary<string, IReadOnlyList<BpmnSequenceFlow>> _outgoing;
+        private readonly IReadOnlyDictionary<string, BpmnNodeDefinition> _timerBoundaryByHost;
 
         private FlowGraph(
             IReadOnlyDictionary<string, BpmnNodeDefinition> nodeById,
-            IReadOnlyDictionary<string, IReadOnlyList<BpmnSequenceFlow>> outgoing)
+            IReadOnlyDictionary<string, IReadOnlyList<BpmnSequenceFlow>> outgoing,
+            IReadOnlyDictionary<string, BpmnNodeDefinition> timerBoundaryByHost)
         {
             NodeById = nodeById;
             _outgoing = outgoing;
+            _timerBoundaryByHost = timerBoundaryByHost;
         }
+
+        /// <summary>
+        /// The interrupting timer boundary event attached (via BPMN <c>attachedToRef</c>) to the
+        /// given activity, if any. Used to bound how long a run may park on an external wait (#208).
+        /// </summary>
+        public BpmnNodeDefinition? GetAttachedTimerBoundary(string nodeId) =>
+            _timerBoundaryByHost.TryGetValue(nodeId, out var boundary) ? boundary : null;
 
         public static FlowGraph Build(BpmnWorkflowDefinition definition)
         {
@@ -1092,7 +1219,18 @@ public sealed class WorkflowInstanceEngine : IWorkflowEngineAdapter
                 outgoing = InferFlows(definition.Nodes);
             }
 
-            return new FlowGraph(nodeById, outgoing);
+            var timerBoundaryByHost = definition.Nodes
+                .Where(static n => n.ElementName == "boundaryEvent"
+                    && n.AttachedToRef is not null
+                    && n.CancelActivity
+                    && n.TimerDuration is not null)
+                .GroupBy(static n => n.AttachedToRef!, StringComparer.Ordinal)
+                .ToDictionary(
+                    static g => g.Key,
+                    static g => g.First(),
+                    StringComparer.Ordinal);
+
+            return new FlowGraph(nodeById, outgoing, timerBoundaryByHost);
         }
 
         public IReadOnlyList<BpmnSequenceFlow> GetOutgoing(string nodeId) =>

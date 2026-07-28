@@ -32,17 +32,22 @@ public sealed class EvaluationBpmnArtifactsTests
                 "ImplementComponents",
                 "GenerateUnitTestPlan",
                 "WaitUnitTestResults",
+                "UnitTestResultsTimeout",
                 "ValidateComponentTraceability",
                 "GenerateIntegrationTestPlan",
                 "WaitIntegrationTestResults",
+                "IntegrationTestResultsTimeout",
                 "ValidateArchitectureTraceability",
                 "AnalyzeSystemTestResults",
                 "WaitSystemTestResults",
+                "SystemTestResultsTimeout",
                 "SummarizeVerificationFailures",
                 "PrepareAcceptanceTest",
                 "ApproveAcceptanceSignoff",
                 "PrepareTraceabilityReport",
-                "End"
+                "End",
+                "EscalateVerificationTimeout",
+                "EndTimedOut"
             },
             definition.Nodes.Select(static node => node.Id).ToArray());
 
@@ -61,6 +66,12 @@ public sealed class EvaluationBpmnArtifactsTests
         AssertExternalWait(definition, "WaitUnitTestResults", "test.unit.completed", "{{input.build_id}}:unit");
         AssertExternalWait(definition, "WaitIntegrationTestResults", "test.integration.completed", "{{input.build_id}}:integration");
         AssertExternalWait(definition, "WaitSystemTestResults", "test.system.completed", "{{input.build_id}}:system");
+
+        // Every external wait is bounded by an interrupting boundary timer, so a build that never
+        // reports back escalates instead of parking the run in waiting_external forever (#208).
+        AssertBoundaryTimer(definition, "UnitTestResultsTimeout", "WaitUnitTestResults", "PT2H");
+        AssertBoundaryTimer(definition, "IntegrationTestResultsTimeout", "WaitIntegrationTestResults", "PT4H");
+        AssertBoundaryTimer(definition, "SystemTestResultsTimeout", "WaitSystemTestResults", "PT8H");
 
         var traceability = definition.Nodes.Single(static node => node.Id == "PrepareTraceabilityReport");
         Assert.Equal("vmodel.traceability.report", traceability.Metadata!.Action);
@@ -241,6 +252,20 @@ public sealed class EvaluationBpmnArtifactsTests
         Assert.Equal("intermediateCatchEvent", node.ElementName);
         Assert.Equal(messageName, node.ExternalEventMetadata!.MessageName);
         Assert.Equal(correlationKeyTemplate, node.ExternalEventMetadata.CorrelationKeyTemplate);
+    }
+
+    private static void AssertBoundaryTimer(
+        BpmnWorkflowDefinition definition,
+        string nodeId,
+        string attachedToRef,
+        string timerDuration)
+    {
+        var node = definition.Nodes.Single(node => node.Id == nodeId);
+
+        Assert.Equal("boundaryEvent", node.ElementName);
+        Assert.Equal(attachedToRef, node.AttachedToRef);
+        Assert.Equal(timerDuration, node.TimerDuration);
+        Assert.True(node.CancelActivity);
     }
 
     private static string RemoveExtensionElements(string bpmn, string nodeId)

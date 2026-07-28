@@ -70,6 +70,13 @@ public interface IWorkflowMetrics
     /// <paramref name="kind"/> is "reject" or "escalate".
     /// </summary>
     void ToolPolicyDenied(string agentName, string policyTag, string kind);
+
+    /// <summary>
+    /// Publishes the current population of runs parked in <c>waiting_external</c> (#208) so ops can
+    /// alert on waits that are stuck. <paramref name="stale"/> counts those parked longer than the
+    /// configured threshold; <paramref name="oldestAgeSeconds"/> is 0 when nothing is waiting.
+    /// </summary>
+    void RecordWaitingExternalRuns(int total, int stale, double oldestAgeSeconds);
 }
 
 /// <summary>

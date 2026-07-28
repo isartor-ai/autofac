@@ -109,6 +109,7 @@ public sealed class AgentModelRunnerTests
 
         // Unused in these tests:
         public void RunStarted(string workflowId, string workflowName) { }
+        public void RecordWaitingExternalRuns(int total, int stale, double oldestAgeSeconds) { }
         public void RunCompleted(string workflowId, string workflowName, double durationMs) { }
         public void RunFailed(string workflowId, string workflowName, string reason) { }
         public void StepCompleted(string stepType, string agentName, double durationMs, bool succeeded) { }

@@ -20,4 +20,10 @@ public interface IWaitingExternalCorrelationRepository
     /// Returns null when no run is currently waiting on a matching event.
     /// </summary>
     Task<string?> FindWaitingRunIdAsync(string messageName, string correlationKey, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Every run currently parked on an external event. Used to publish the waiting_external
+    /// gauge so ops can alert on waits that never resolve (#208).
+    /// </summary>
+    Task<IReadOnlyList<WaitingExternalCorrelation>> ListWaitingAsync(CancellationToken cancellationToken);
 }

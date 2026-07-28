@@ -610,6 +610,100 @@ public sealed class BpmnWorkflowValidatorTests
     }
 
     [Fact]
+    public void Validate_WhenExternalWaitHasInterruptingBoundaryTimer_CapturesAttachmentAndDuration()
+    {
+        var result = _validator.Validate(ExternalWaitWithBoundary(
+            """
+            <bpmn:boundaryEvent id="WaitTimeout" attachedToRef="WaitForBuild" cancelActivity="true">
+              <bpmn:timerEventDefinition><bpmn:timeDuration>PT4H</bpmn:timeDuration></bpmn:timerEventDefinition>
+            </bpmn:boundaryEvent>
+            """));
+
+        Assert.True(result.IsValid, string.Join("; ", result.Errors.Select(static e => e.Message)));
+
+        var boundary = result.Definition!.Nodes.Single(static n => n.Id == "WaitTimeout");
+        Assert.Equal("WaitForBuild", boundary.AttachedToRef);
+        Assert.Equal("PT4H", boundary.TimerDuration);
+        Assert.True(boundary.CancelActivity);
+    }
+
+    [Fact]
+    public void Validate_WhenBoundaryTimerOnExternalWaitIsNonInterrupting_ReturnsError()
+    {
+        var result = _validator.Validate(ExternalWaitWithBoundary(
+            """
+            <bpmn:boundaryEvent id="WaitTimeout" attachedToRef="WaitForBuild" cancelActivity="false">
+              <bpmn:timerEventDefinition><bpmn:timeDuration>PT4H</bpmn:timeDuration></bpmn:timerEventDefinition>
+            </bpmn:boundaryEvent>
+            """));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, static error =>
+            error.ElementId == "WaitTimeout" &&
+            error.Message.Contains("must be interrupting", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_WhenBoundaryTimerDurationIsMissingOrInvalid_ReturnsActionableError()
+    {
+        var missing = _validator.Validate(ExternalWaitWithBoundary(
+            """
+            <bpmn:boundaryEvent id="WaitTimeout" attachedToRef="WaitForBuild">
+              <bpmn:timerEventDefinition />
+            </bpmn:boundaryEvent>
+            """));
+
+        Assert.False(missing.IsValid);
+        Assert.Contains(missing.Errors, static error =>
+            error.ElementId == "WaitTimeout" && error.Message.Contains("timeDuration", StringComparison.Ordinal));
+
+        var invalid = _validator.Validate(ExternalWaitWithBoundary(
+            """
+            <bpmn:boundaryEvent id="WaitTimeout" attachedToRef="WaitForBuild">
+              <bpmn:timerEventDefinition><bpmn:timeDuration>4 hours</bpmn:timeDuration></bpmn:timerEventDefinition>
+            </bpmn:boundaryEvent>
+            """));
+
+        Assert.False(invalid.IsValid);
+        Assert.Contains(invalid.Errors, static error =>
+            error.ElementId == "WaitTimeout" && error.Message.Contains("ISO-8601", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_WhenBoundaryEventIsAttachedToUnknownActivity_ReturnsError()
+    {
+        var result = _validator.Validate(ExternalWaitWithBoundary(
+            """
+            <bpmn:boundaryEvent id="WaitTimeout" attachedToRef="NoSuchNode">
+              <bpmn:timerEventDefinition><bpmn:timeDuration>PT4H</bpmn:timeDuration></bpmn:timerEventDefinition>
+            </bpmn:boundaryEvent>
+            """));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, static error =>
+            error.ElementId == "WaitTimeout" &&
+            error.Message.Contains("unknown activity", StringComparison.Ordinal));
+    }
+
+    private static string ExternalWaitWithBoundary(string boundaryXml) =>
+        """
+        <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                          xmlns:agentwerke="https://agentwerke.dev/bpmn/extensions/v1">
+          <bpmn:process id="BoundedWaitFlow">
+            <bpmn:startEvent id="Start" />
+            <bpmn:intermediateCatchEvent id="WaitForBuild" name="Wait For Build">
+              <bpmn:extensionElements>
+                <agentwerke:externalEvent messageName="ci.build.completed" correlationKeyTemplate="{{input.build_id}}" />
+              </bpmn:extensionElements>
+              <bpmn:messageEventDefinition />
+            </bpmn:intermediateCatchEvent>
+            __BOUNDARY__
+            <bpmn:endEvent id="End" />
+          </bpmn:process>
+        </bpmn:definitions>
+        """.Replace("__BOUNDARY__", boundaryXml, StringComparison.Ordinal);
+
+    [Fact]
     public void Validate_WhenAgentwerkeMetadataHasNonBlockingIssues_ReturnsActionableWarnings()
     {
         var xml = """
