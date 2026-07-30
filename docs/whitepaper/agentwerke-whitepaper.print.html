@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Governed Agentic Delivery — Agentwerke Method and Platform Definition</title>
+<style>
+  @page {
+    size: A4;
+    margin: 17mm 16mm 18mm 16mm;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 9.6pt;
+    line-height: 1.5;
+    color: #1a1a1c;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .masthead {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 7.5pt;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #8a6d1f;
+    border-bottom: 0.6pt solid #d8d8dc;
+    padding-bottom: 4pt;
+    margin-bottom: 18pt;
+  }
+  .masthead .mark { font-weight: 700; color: #1a1a1c; }
+
+  h1.title {
+    font-size: 19pt;
+    line-height: 1.25;
+    text-align: center;
+    margin: 0 auto 6pt auto;
+    max-width: 160mm;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  p.authors {
+    text-align: center;
+    font-style: italic;
+    font-size: 9.5pt;
+    color: #444;
+    margin: 0 0 16pt 0;
+  }
+
+  .abstract {
+    max-width: 150mm;
+    margin: 0 auto 18pt auto;
+    font-size: 9pt;
+    line-height: 1.5;
+  }
+  .abstract .label {
+    display: block;
+    text-align: center;
+    font-weight: 700;
+    font-size: 8pt;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin-bottom: 4pt;
+  }
+  .abstract p { margin: 0; text-align: justify; }
+
+  .twocol {
+    column-count: 2;
+    column-gap: 7.5mm;
+    text-align: justify;
+    hyphens: auto;
+  }
+
+  h2 {
+    font-size: 10pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 12pt 0 5pt 0;
+    break-after: avoid;
+    text-align: left;
+  }
+  h3 {
+    font-size: 9.6pt;
+    font-weight: 700;
+    margin: 9pt 0 4pt 0;
+    break-after: avoid;
+    text-align: left;
+  }
+  p { margin: 0 0 6pt 0; }
+  ul, ol { margin: 0 0 6pt 0; padding-left: 5mm; }
+  li { margin-bottom: 3pt; }
+  strong { font-weight: 700; }
+  em { font-style: italic; }
+  a { color: inherit; text-decoration: none; }
+
+  .pipeline {
+    break-inside: avoid;
+    background: #f5f4f0;
+    border-left: 2.2pt solid #b8860b;
+    padding: 6pt 8pt;
+    margin: 6pt 0 8pt 0;
+    font-size: 8.8pt;
+    line-height: 1.55;
+  }
+
+  pre {
+    break-inside: avoid;
+    background: #f6f6f8;
+    border: 0.6pt solid #ddddde;
+    border-radius: 2pt;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 6.9pt;
+    line-height: 1.45;
+    padding: 5pt 6pt;
+    margin: 4pt 0 8pt 0;
+    white-space: pre-wrap;
+    word-break: break-all;
+    overflow: hidden;
+    text-align: left;
+  }
+  code {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 8.6pt;
+    background: #f2f2f4;
+    padding: 0 2pt;
+  }
+
+  .refs { font-size: 8.6pt; }
+  .refs ol { padding-left: 4.5mm; }
+
+  .colophon {
+    margin-top: 14pt;
+    padding-top: 5pt;
+    border-top: 0.6pt solid #d8d8dc;
+    font-size: 7.6pt;
+    color: #666;
+    text-align: center;
+    column-span: all;
+  }
+</style>
+</head>
+<body>
+
+<div class="masthead">
+  <span class="mark">AGENTWERKE</span>
+  <span>Isartor AI &nbsp;·&nbsp; agentwerke.de</span>
+</div>
+
+<h1 class="title">Governed Agentic Delivery:<br>The Agentwerke Method and Platform Definition</h1>
+<p class="authors">Isartor AI &middot; Version 1.0 &middot; July 2026</p>
+
+<div class="abstract">
+  <span class="label">Abstract</span>
+  <p>AI agents can now plan, code, test, review, and open pull requests. AI-native methods such as AWS&rsquo;s AI-Driven Development Lifecycle (AI-DLC) reimagine the software lifecycle around that capability: AI initiates and drives the work while humans oversee it at critical junctures. This paper argues that in an enterprise, oversight cannot remain a convention &mdash; it must be enforced by infrastructure. We define <strong>Governed Agentic Delivery</strong>, the method behind <strong>Agentwerke</strong>, a self-hosted control plane in which every agent job runs a versioned BPMN process, every tool call crosses a policy gate, sensitive work executes in sandboxes, humans hold explicit approval choke points, and every run emits an audit-ready evidence pack. The result is not slower agents; it is autonomous delivery an engineering organization can inspect, interrupt, and defend.</p>
+</div>
+
+<div class="twocol">
+
+<h2>I. Context</h2>
+
+<p>The evolution of software engineering has been a continuous effort to let developers focus on the problem rather than the plumbing. Large Language Models first delivered the <strong>AI-Assisted</strong> era &mdash; completion, bug detection, test generation &mdash; where AI accelerates fine-grained tasks under continuous human direction. The frontier has since moved to the <strong>AI-Driven</strong> era: agents that elaborate requirements, decompose work, write and test code, and open pull requests with minutes of human attention rather than hours.</p>
+
+<p>Method work has begun to catch up. AWS&rsquo;s <em>AI-Driven Development Lifecycle (AI-DLC) Method Definition</em> is a notable example: it reverses the conversation direction so that AI initiates and drives the workflow, compresses iterations from weeks to hours (&ldquo;Bolts&rdquo;), and positions human oversight as a <em>loss function</em> &mdash; catching errors at critical junctures before they snowball downstream. We agree with this reimagination, and Agentwerke is designed to execute exactly such methods.</p>
+
+<p>But a method definition answers <em>what should happen</em>. In a regulated engineering organization, a second question decides whether autonomous delivery is adoptable at all: <em>what enforces it?</em> When rituals live in prompts and conventions, the gaps show up quickly:</p>
+
+<ul>
+  <li><strong>Opaque decisions.</strong> Agent reasoning hides in prompt transcripts. No versioned process describes what an agent was allowed to attempt, or why it did what it did.</li>
+  <li><strong>Weak auditability.</strong> Merged code arrives with no defensible trail of prompts, tool calls, costs, and approvals &mdash; exactly what compliance and incident review need.</li>
+  <li><strong>Uncontrolled tool access.</strong> Credentials, networks, repositories, and deployment paths sit one unguarded tool call away from an autonomous process.</li>
+  <li><strong>Data exposure.</strong> Prompts and context flow to third-party model endpoints with no redaction boundary, residency control, or secret-handling discipline.</li>
+  <li><strong>Inconsistent process.</strong> Every team wires agents differently; handoffs between planning, build, review, and deployment stay manual and low-visibility.</li>
+  <li><strong>No human choke points.</strong> High-risk steps complete without an explicit decision. Approval is bolted on after the fact instead of being part of the process.</li>
+</ul>
+
+<p>&ldquo;Lights-out&rdquo; manufacturing proved that a factory can keep running without people on the floor. Philip K. Dick&rsquo;s 1955 story <em>Autofac</em> warned what happens when automated production continues after meaningful human control has slipped away. Agentwerke takes the name in a different direction &mdash; <em>agent</em> plus <em>Werke</em>, the engineered works where software agents operate. The thesis is not an autonomous factory beyond control. It is a professional software factory where agents plan, build, integrate, and deliver <strong>under enterprise governance</strong>.</p>
+
+<p>The point is not to make agents harmless. The point is to make powerful automation <strong>inspectable, interruptible, and accountable</strong>.</p>
+
+<p>This paper defines Governed Agentic Delivery in three parts: the principles that shape it (Section II), the core framework of artefacts, components, and workflow that implements it (Section III), worked green-field and brown-field scenarios (Sections IV&ndash;V), its relationship to AI-native methods such as AI-DLC (Section VI), and an adoption path (Section VII).</p>
+
+<h2>II. Key Principles</h2>
+
+<p><strong>1. Govern rather than trust.</strong> Agents can act &mdash; plan, code, call tools, open pull requests &mdash; but they never get direct access to credentials, networks, repositories, or deployment paths. Every capability is mediated. Trust is placed in the enforcement layer, not in the model&rsquo;s disposition, and therefore survives model upgrades, prompt changes, and adversarial inputs.</p>
+
+<p><strong>2. Workflow over vibes.</strong> Software delivery is modeled as versioned BPMN 2.0, not hidden in a prompt transcript. The process is an artefact: it can be designed, reviewed, diffed, versioned, and &mdash; critically &mdash; <em>executed</em>. Agent steps, approval gates, wait states, timers, and gateways are first-class nodes. Because BPMN is an open standard, the process model is portable and readable by tools and auditors that predate the AI era.</p>
+
+<p><strong>3. Policy is evaluated at execution time, not asserted in a prompt.</strong> A prompt instruction (&ldquo;do not push to main&rdquo;) is a request; a policy gate is a guarantee. In Agentwerke, every tool and connector call is brokered through a gateway and evaluated <em>before</em> it runs. Decisions are <strong>allow, escalate, or reject</strong>, each carrying a purpose-confidence and risk score, and each recorded. Policies are data, not code, with a <strong>draft &rarr; simulate &rarr; publish</strong> lifecycle and impact analysis, so a policy change can be rehearsed against history before it governs production. Per-run cost and token budgets bound the economics the same way: model calls halt once the budget is exceeded.</p>
+
+<p><strong>4. Sandboxes by default.</strong> Agent and tool execution happens inside controlled environments &mdash; Docker, OpenSandbox, or Kubernetes &mdash; selected per step by sandbox profile and network policy. The blast radius of any single step is a configuration, not a hope.</p>
+
+<p><strong>5. Humans at the right choke points.</strong> High-risk steps pause for an explicit decision. Approval gates, wait states, and escalations are part of the process model &mdash; not bolted on later &mdash; and the decider is written into the audit trail. Agents can also <em>ask</em>: a blocking question suspends the run until a person answers, so human judgment is available mid-process without holding a thread open. This operationalizes the oversight-as-loss-function idea: errors are caught and pruned at defined junctures before they snowball.</p>
+
+<p><strong>6. Evidence as exhaust.</strong> Every run emits a schema-versioned, tamper-evident <strong>evidence pack</strong>: prompts (redacted in the persisted snapshot), model and tool calls, policy decisions with rationale, sandbox executions, approvals with decider and timestamp, per-run token and cost accounting, artifacts, and outcomes &mdash; with the workflow&rsquo;s BPMN hash bound in for integrity. Evidence is produced as a by-product of execution, not reconstructed after the fact. It is the difference between &ldquo;the agent wrote this&rdquo; and &ldquo;here is exactly how, under which policy, and who approved it.&rdquo;</p>
+
+<p><strong>7. Self-hosted by design.</strong> The factory runs on your infrastructure, with your model keys and your data boundary. Workflow definitions, runs, approvals, audit records, and run context stay in your PostgreSQL database; artifacts stay in your storage. Data leaves the boundary only through integrations and model providers you explicitly enable &mdash; which is what makes residency, secret-handling, and redaction requirements satisfiable rather than aspirational.</p>
+
+<p><strong>8. Open core, open standards, no method lock-in.</strong> Agentwerke is open-core (Apache-2.0) and builds on open standards: BPMN 2.0 for process, the Model Context Protocol (MCP) for tools, OIDC for identity. It does not prescribe an opinionated lifecycle. Whatever method an organization adopts &mdash; AI-DLC, V-model, a regulated variant of Scrum &mdash; Agentwerke executes it as a modeled, governed process. The method is the content; Agentwerke is the enforcement.</p>
+
+<h2>III. Core Framework</h2>
+
+<p>Agentwerke is a layered .NET control plane. This section defines its artefacts, components, and the end-to-end workflow of a run.</p>
+
+<h3>1. Artefacts</h3>
+
+<p><strong>Workflow definition.</strong> A BPMN 2.0 process carrying Agentwerke extension metadata (<code>agentwerke.de/bpmn/extensions/v1</code>). The extensions turn a BPMN service task into an <em>agent work cell</em> (which agent profile, which skill, which sandbox profile) and a BPMN user task into a <em>governed approval gate</em>. Definitions are versioned; a run is always bound to the exact version &mdash; and hash &mdash; it executed.</p>
+
+<p><strong>Run.</strong> One execution of a workflow definition, durable and event-sourced. A run advances through nodes, pauses at approvals, wait states, and blocking questions, and resumes from external signals (a webhook, green CI, a merged PR) or timers. Runs survive restarts; state lives in PostgreSQL.</p>
+
+<p><strong>Agent profile and skills.</strong> The configuration an orchestrated step assembles before the model receives work: the agent&rsquo;s role, its skill (task instructions), its run context, and the tools it is permitted to request.</p>
+
+<p><strong>Policy.</strong> A data-driven rule set governing actions. Policies are authored as drafts, <em>simulated</em> against historical traffic to see what they would have allowed, escalated, or rejected, then published. Every subsequent decision records which policy version produced it.</p>
+
+<p><strong>Approval.</strong> An explicit human decision attached to a gate: approve or reject, with the decider, timestamp, and context captured &mdash; including interactive approve/reject from Slack.</p>
+
+<p><strong>Evidence pack.</strong> The schema-versioned record of a run described in Principle 6, retrievable per run via API (<code>GET /api/runs/{runId}/evidence-pack</code>), designed to be handed to an auditor.</p>
+
+<h3>2. Components</h3>
+
+<p><strong>BPMN workflow runtime.</strong> A bounded, Postgres-backed, in-process engine with event-sourced checkpoints executes versioned BPMN. Runs are dispatched asynchronously via a transactional outbox drained by a background worker, so intake returns immediately and the engine advances the run &mdash; and resumes it on approval, external event, or timer. External waits are bounded by interrupting boundary timers. An enterprise Camunda&nbsp;8 adapter is available where organizations standardize on it.</p>
+
+<p><strong>Agent orchestrator.</strong> When a run reaches an agent task, the orchestrator assembles the profile, skill, run context, and permitted tools, then drives the model loop. Model providers are pluggable &mdash; Anthropic Claude natively, plus any OpenAI-compatible endpoint (OpenAI, Azure OpenAI, or a LiteLLM proxy) &mdash; and a deterministic mock provider supports zero-cost demos and CI. Per-run cost and token budgets halt model calls once exceeded.</p>
+
+<p><strong>Policy-enforced tool gateway.</strong> The single door between an agent and the world. Every tool and connector call &mdash; repository writes, CI triggers, chat messages, MCP tools &mdash; is brokered, evaluated against published policy, executed in the right boundary, and recorded with its decision and rationale.</p>
+
+<p><strong>Sandboxed execution.</strong> Isolated Docker, OpenSandbox, or Kubernetes environments host agent and tool work, selected per step by sandbox profile and network policy, with a dedicated runner image as the entrypoint.</p>
+
+<p><strong>Human interaction.</strong> Approval gates pause runs for decisions; <code>human.ask</code> lets an agent pose a blocking question that suspends the run until answered; <code>human.notify</code> sends a non-blocking heads-up. Agents can also coordinate with each other over a run-scoped message bus and delegate bounded sub-tasks. All of these exchanges persist as auditable interaction records that also back the run&rsquo;s conversation view.</p>
+
+<p><strong>Enterprise integrations.</strong> GitHub and Jira intake; GitHub branches, pull requests, and reviews; CI/CD; Slack and Microsoft Teams; and any MCP-compatible tool &mdash; all brokered through the same policy gateway.</p>
+
+<p><strong>Enterprise foundation.</strong> OIDC/JWT SSO against your identity provider, role-based access control (Viewer, Operator, Approver, Admin) written into the audit trail, LDAP/AD group-to-role mapping, secret handling through a secret store (the API exposes status and fingerprint, never raw values), and artifact storage on your filesystem or S3 bucket. Deployment is Docker Compose for a single host or Kubernetes/Helm for production.</p>
+
+<p><strong>Operations cockpit.</strong> A web UI provides a BPMN workflow designer, run board, run detail with live per-step status on the diagram, approvals dashboard, policy management, and audit views.</p>
+
+<h3>3. The Workflow</h3>
+
+<p>Every run follows the same governed pipeline:</p>
+
+<div class="pipeline"><strong>Trigger</strong> (API call or webhook) &rarr; <strong>BPMN run</strong> (versioned process) &rarr; <strong>Agent task</strong> (model loop) &rarr; <strong>Policy gate</strong> (allow / escalate / reject) &rarr; <strong>Sandbox + tool gateway</strong> (isolated execution) &rarr; <strong>Human approval</strong> (explicit decision) &rarr; <strong>Evidence pack</strong> (audit + artifacts)</div>
+
+<p>Three properties of this pipeline carry the governance argument. First, the process is <em>declared before execution</em>: what the run may attempt is readable from the workflow definition, not discovered from a transcript. Second, enforcement is <em>positioned at execution time</em>: the policy gate sits between the agent&rsquo;s intent and the world&rsquo;s state change, and the same gate serves every integration. Third, the record is <em>produced by the pipeline itself</em>: evidence accumulates as the run advances, and the pack binds to the BPMN hash of the exact process version that ran.</p>
+
+<h2>IV. In Action: Green-Field Delivery</h2>
+
+<p>Consider the canonical flow: a GitHub issue becomes a reviewed pull request.</p>
+
+<ol>
+  <li><strong>Intake.</strong> A labeled GitHub issue fires a webhook; the API validates the payload and starts a run of the issue-to-PR workflow. The intake responds immediately; the outbox worker advances the run asynchronously.</li>
+  <li><strong>Analysis (agent task).</strong> The orchestrator assembles the analyst profile and the run context (issue body, repository metadata) and drives the model loop. The agent reads the repository through policy-gated tools and produces an implementation plan as an artifact.</li>
+  <li><strong>Plan approval (human gate).</strong> The run pauses. An Approver reviews the plan &mdash; in the cockpit or directly from Slack &mdash; and approves. The decision, decider, and timestamp enter the audit trail.</li>
+  <li><strong>Implementation (agent task, sandboxed).</strong> A sandbox is provisioned per the step&rsquo;s profile and network policy. The agent edits code, runs tests, and commits &mdash; every repository write brokered through the tool gateway and checked against policy. An attempt to touch a path or branch outside policy is escalated or rejected, and recorded either way.</li>
+  <li><strong>Pull request.</strong> The agent opens a PR through the GitHub connector. The run enters a wait state bounded by a timer.</li>
+  <li><strong>External signals.</strong> Green CI and the PR review arrive as webhooks and resume the run. A failed check can route back to the implementation task; a timeout escalates to a human.</li>
+  <li><strong>Evidence.</strong> The run completes and its evidence pack is retrievable: plan, prompts (redacted), every tool call, every policy decision, the sandbox profile, the approvals, the per-run cost, and the artifacts &mdash; bound to the workflow version that produced them.</li>
+</ol>
+
+<p>The deliverable is not just the pull request. It is the pull request <em>plus</em> the defensible record of how it came to exist.</p>
+
+<h2>V. In Action: Brown-Field Change</h2>
+
+<p>Brown-field work &mdash; a defect fix, an enhancement, refactoring within an existing system &mdash; follows the same pipeline with a different emphasis. The analysis task begins by building context from the existing code before proposing a change plan; policies are typically tighter (protected paths, constrained dependencies, mandatory human review on migration or configuration changes); and wait states integrate with the organization&rsquo;s existing CI and review process rather than replacing it. Because the process is a modeled artefact, a team encodes its brown-field rules once &mdash; in the workflow and the policy set &mdash; instead of re-asserting them in every prompt.</p>
+
+<h2>VI. Relationship to AI-Native Methods</h2>
+
+<p>Governed Agentic Delivery is not a competitor to AI-DLC and similar AI-native methods; it is their execution substrate. The mapping is direct:</p>
+
+<ul>
+  <li>An AI-DLC <strong>Intent</strong> arrives as a trigger payload; the <strong>Level&nbsp;1 plan</strong> is the workflow definition a team has modeled and versioned.</li>
+  <li><strong>Units and Bolts</strong> decompose into BPMN subprocesses and agent tasks that can run in parallel where the model allows.</li>
+  <li><strong>Mob Elaboration and validation rituals</strong> &mdash; the human oversight AI-DLC places at critical junctures &mdash; become approval gates and blocking questions: enforced pauses, not calendar conventions.</li>
+  <li><strong>Oversight as a loss function</strong> becomes machinery: policy gates prune disallowed actions at the moment of execution, and approval gates prune wrong directions between phases.</li>
+  <li>The artefact trail AI-DLC calls <strong>context memory</strong> persists as run context, interaction records, artifacts, and the evidence pack.</li>
+</ul>
+
+<p>A method definition tells an organization what good AI-native delivery looks like. A governed runtime is what lets a compliance function sign off on actually running it. Enterprises need both.</p>
+
+<h2>VII. Adoption</h2>
+
+<p>Agentwerke is designed for incremental adoption:</p>
+
+<ol>
+  <li><strong>Start tokenless.</strong> The quickstart ships a minimal hello-SDLC workflow that runs against the deterministic mock model &mdash; the full pipeline (process, gates, evidence) with zero model cost and no keys.</li>
+  <li><strong>Govern one real flow.</strong> Connect a repository and run issue-to-PR with a real model, a conservative policy set, and human approval on every gate. Inspect the evidence packs; tune policies with the simulate lifecycle.</li>
+  <li><strong>Widen autonomy deliberately.</strong> As confidence and policy maturity grow, relax gates where evidence supports it &mdash; approvals concentrate on genuinely high-risk steps, and the loss function moves earlier into policy.</li>
+  <li><strong>Scale into the enterprise.</strong> SSO, RBAC, LDAP/AD mapping, residency controls, and Kubernetes/Helm deployment carry the same pipeline to organization scale.</li>
+</ol>
+
+<p>Because the platform is open-core under Apache-2.0, teams can adopt, audit, and extend the factory floor itself &mdash; and bring their own method to run on it.</p>
+
+<h2>Appendix A: A Minimal Governed Workflow</h2>
+
+<p>The Agentwerke extension metadata inside standard BPMN 2.0 is what turns a process diagram into a governed factory line. A minimal example &mdash; one agent work cell and one human gate:</p>
+
+<pre>&lt;bpmn:definitions
+    xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+    xmlns:agentwerke="https://agentwerke.de/bpmn/extensions/v1"&gt;
+  &lt;bpmn:process id="HelloSdlc" name="Hello SDLC" isExecutable="true"&gt;
+    &lt;bpmn:startEvent id="Start" name="Start" /&gt;
+    &lt;bpmn:serviceTask id="Analyze" name="Analyze"&gt;
+      &lt;bpmn:extensionElements&gt;
+        &lt;agentwerke:agentTask agentProfile="analyst"
+                              skill="analyze-issue" /&gt;
+      &lt;/bpmn:extensionElements&gt;
+    &lt;/bpmn:serviceTask&gt;
+    &lt;bpmn:userTask id="Review" name="Review Approval"&gt;
+      &lt;bpmn:extensionElements&gt;
+        &lt;agentwerke:approvalTask role="Approver" /&gt;
+      &lt;/bpmn:extensionElements&gt;
+    &lt;/bpmn:userTask&gt;
+    &lt;bpmn:endEvent id="Done" name="Done" /&gt;
+  &lt;/bpmn:process&gt;
+&lt;/bpmn:definitions&gt;</pre>
+
+<p>An ordinary BPMN editor reads this; the Agentwerke runtime executes it; the evidence pack records it.</p>
+
+<h2>References</h2>
+
+<div class="refs">
+<ol>
+  <li>Raja SP, <em>AI-Driven Development Lifecycle (AI-DLC) Method Definition</em>, Amazon Web Services.</li>
+  <li>Agentwerke documentation &mdash; docs.agentwerke.de</li>
+  <li>Agentwerke source repository &mdash; github.com/isartor-ai/agentwerke</li>
+  <li>Philip K. Dick, &ldquo;Autofac,&rdquo; <em>Galaxy Science Fiction</em>, 1955.</li>
+</ol>
+</div>
+
+<div class="colophon">&copy; 2026 Isartor AI &middot; agentwerke.de &middot; Governed Agentic Delivery &mdash; Agentwerke Method and Platform Definition &middot; Version 1.0, July 2026 &middot; Apache-2.0</div>
+
+</div>
+
+</body>
+</html>
